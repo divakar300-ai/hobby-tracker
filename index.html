@@ -125,6 +125,9 @@
 
   /* File input hidden */
   .file-input { display: none; }
+  .admin-only { display: none !important; }
+  body.can-edit .admin-only { display: inline-flex !important; }
+  body.can-edit .fab.admin-only { display: flex !important; }
 
   /* Responsive tweaks */
   @media (max-width: 380px) {
@@ -137,6 +140,7 @@
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 </head>
 <body>
 
@@ -148,8 +152,9 @@
   <h1>Hobby Tracker</h1>
   <div class="sub" id="quote"></div>
   <div class="header-actions">
-    <button class="btn btn-outline btn-sm" onclick="importAllCSV()">📂 Import CSV</button>
+    <button class="btn btn-outline btn-sm admin-only" onclick="importAllCSV()">📂 Import CSV</button>
     <button class="btn btn-export btn-sm" onclick="exportAllCSV()">💾 Export All CSV</button>
+    <button class="btn btn-outline btn-sm" id="adminAuthBtn" style="display:none;"></button>
   </div>
 </div>
 
@@ -179,7 +184,7 @@
     <div class="card">
       <div class="card-header">
         <span class="card-title">📚 Yearly Goal</span>
-        <button class="btn btn-sm btn-outline" onclick="editBookGoal()">Edit</button>
+        <button class="btn btn-sm btn-outline admin-only" onclick="editBookGoal()">Edit</button>
       </div>
       <div id="bookGoalBar"></div>
     </div>
@@ -235,7 +240,7 @@
 </div>
 
 <!-- FAB (quick add) -->
-<button class="fab" id="fab" style="background:linear-gradient(135deg,#8B5CF6,#3B82F6);" onclick="openQuickAdd()">+</button>
+<button class="fab admin-only" id="fab" style="background:linear-gradient(135deg,#8B5CF6,#3B82F6);" onclick="openQuickAdd()">+</button>
 
 <!-- Hidden file inputs -->
 <input type="file" class="file-input" id="importFile" accept=".csv" multiple onchange="handleImport(event)">
@@ -257,7 +262,15 @@ const firebaseConfig = {
 };
 let db = null;
 let docRef = null;
+let auth = null;
 let firebaseReady = false;
+let canEdit = false;
+let currentUser = null;
+let _authInitialized = false;
+const ADMIN_MODE = new URLSearchParams(window.location.search).get('admin') === '1';
+// Set one of these to your own account before deploying owner-only writes.
+const OWNER_UID = 'REPLACE_WITH_OWNER_UID';
+const OWNER_EMAIL = 'REPLACE_WITH_OWNER_EMAIL@example.com';
 
 try {
   if (window.firebase?.apps?.length) {
@@ -266,10 +279,72 @@ try {
     window.firebase.initializeApp(firebaseConfig);
   }
   db = window.firebase?.firestore?.() || null;
+  auth = window.firebase?.auth?.() || null;
   docRef = db ? db.collection('tracker').doc('main') : null;
   firebaseReady = !!docRef;
 } catch (e) {
   console.warn('Firebase init failed. Running local-only mode.', e);
+}
+
+function isOwner(user) {
+  if (!user) return false;
+  const uidConfigured = OWNER_UID && !OWNER_UID.startsWith('REPLACE_');
+  const emailConfigured = OWNER_EMAIL && !OWNER_EMAIL.startsWith('REPLACE_');
+  const email = (user.email || '').toLowerCase();
+  if (uidConfigured && user.uid === OWNER_UID) return true;
+  if (emailConfigured && email === OWNER_EMAIL.toLowerCase()) return true;
+  return false;
+}
+
+function refreshAccessUI() {
+  document.body.classList.toggle('can-edit', !!canEdit);
+  const btn = document.getElementById('adminAuthBtn');
+  if (!btn) return;
+  if (!ADMIN_MODE) {
+    btn.style.display = 'none';
+    return;
+  }
+  btn.style.display = 'inline-flex';
+  btn.disabled = false;
+  if (!auth) {
+    btn.textContent = 'Auth Off';
+    btn.disabled = true;
+    return;
+  }
+  if (currentUser && canEdit) {
+    btn.textContent = 'Sign Out';
+    return;
+  }
+  if (currentUser && !canEdit) {
+    btn.textContent = 'Not Owner';
+    return;
+  }
+  btn.textContent = 'Admin Login';
+}
+
+async function handleAdminAuthClick() {
+  if (!ADMIN_MODE || !auth) return;
+  try {
+    if (currentUser) {
+      await auth.signOut();
+      return;
+    }
+    const provider = new window.firebase.auth.GoogleAuthProvider();
+    await auth.signInWithPopup(provider);
+  } catch (e) {
+    if (String(e?.code || '').includes('popup')) {
+      try {
+        const provider = new window.firebase.auth.GoogleAuthProvider();
+        await auth.signInWithRedirect(provider);
+        return;
+      } catch (redirectErr) {
+        console.warn('Admin redirect sign-in failed:', redirectErr);
+      }
+    } else {
+      console.warn('Admin sign-in failed:', e);
+    }
+    toast('Admin login failed');
+  }
 }
 
 // ===== DATA =====
@@ -297,7 +372,7 @@ function saveLocal() {
   // Save to sessionStorage as local cache
   try { window.sessionStorage?.setItem?.('hobbyData', JSON.stringify(data)); } catch(e) {}
   // Save to Firebase
-  if (!firebaseReady || !docRef || _saving) return;
+  if (!firebaseReady || !docRef || !canEdit || _saving) return;
   _saving = true;
   docRef.set({
     books: JSON.stringify(data.books),
@@ -344,6 +419,12 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function requireEditAccess() {
+  if (canEdit) return true;
+  toast('View-only mode');
+  return false;
 }
 
 // ===== TABS =====
@@ -516,9 +597,13 @@ function downloadFile(name, content, type) {
   URL.revokeObjectURL(a.href);
 }
 
-function importAllCSV() { document.getElementById('importFile').click(); }
+function importAllCSV() {
+  if (!requireEditAccess()) return;
+  document.getElementById('importFile').click();
+}
 
 function handleImport(event) {
+  if (!canEdit) { event.target.value = ''; return; }
   const files = event.target.files;
   Array.from(files).forEach(file => {
     const reader = new FileReader();
@@ -573,6 +658,7 @@ function closeModal() {
 
 // ===== QUICK ADD =====
 function openQuickAdd() {
+  if (!requireEditAccess()) return;
   const activeTab = document.querySelector('.tab.active')?.dataset.tab || 'overview';
   if (activeTab === 'books' || activeTab === 'overview') openAddBook();
   else if (activeTab === 'ai') openAddAI();
@@ -582,6 +668,7 @@ function openQuickAdd() {
 
 // ===== BOOK ACTIONS =====
 function openAddBook() {
+  if (!requireEditAccess()) return;
   openModal(`
     <h3>📖 Add a Book</h3>
     <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="f-book-title" placeholder="e.g. Atomic Habits"></div>
@@ -594,6 +681,7 @@ function openAddBook() {
 }
 
 function addBook() {
+  if (!requireEditAccess()) return;
   const title = document.getElementById('f-book-title').value.trim();
   const pages = parseInt(document.getElementById('f-book-pages').value) || 0;
   const status = document.getElementById('f-book-status').value;
@@ -607,6 +695,7 @@ function addBook() {
 }
 
 function openUpdateBook(id) {
+  if (!requireEditAccess()) return;
   const b = data.books.entries.find(x => x.id === id);
   if (!b) return;
   openModal(`
@@ -620,6 +709,7 @@ function openUpdateBook(id) {
 }
 
 function updateBook(id) {
+  if (!requireEditAccess()) return;
   const pages = parseInt(document.getElementById('f-upd-pages').value);
   if (isNaN(pages)) return;
   data.books.entries = data.books.entries.map(b => {
@@ -631,11 +721,13 @@ function updateBook(id) {
 }
 
 function deleteBook(id) {
+  if (!requireEditAccess()) return;
   data.books.entries = data.books.entries.filter(b => b.id !== id);
   saveLocal(); render(); closeModal(); toast('Book removed');
 }
 
 function editBookGoal() {
+  if (!requireEditAccess()) return;
   openModal(`
     <h3>📚 Set Yearly Goal</h3>
     <div class="form-group"><label class="form-label">Books to read this year</label>
@@ -646,12 +738,14 @@ function editBookGoal() {
 }
 
 function saveBookGoal() {
+  if (!requireEditAccess()) return;
   data.books.goal = parseInt(document.getElementById('f-book-goal').value) || 12;
   saveLocal(); render(); closeModal(); toast('Goal updated!');
 }
 
 // ===== AI ACTIONS =====
 function openAddAI() {
+  if (!requireEditAccess()) return;
   openModal(`
     <h3>🧠 Add AI Project</h3>
     <div class="form-group"><label class="form-label">Name</label><input class="form-input" id="f-ai-name" placeholder="e.g. RAG Chatbot"></div>
@@ -664,6 +758,7 @@ function openAddAI() {
 }
 
 function addAI() {
+  if (!requireEditAccess()) return;
   const name = document.getElementById('f-ai-name').value.trim();
   const type = document.getElementById('f-ai-type').value;
   const hours = parseFloat(document.getElementById('f-ai-hours').value) || 0;
@@ -674,6 +769,7 @@ function addAI() {
 }
 
 function openLogHours(id) {
+  if (!requireEditAccess()) return;
   const e = data.ai.entries.find(x => x.id === id);
   if (!e) return;
   openModal(`
@@ -690,6 +786,7 @@ function openLogHours(id) {
 }
 
 function logHours(id) {
+  if (!requireEditAccess()) return;
   const hrs = parseFloat(document.getElementById('f-log-hrs').value);
   if (isNaN(hrs) || hrs <= 0) return toast('Enter hours');
   data.ai.entries = data.ai.entries.map(e => e.id === id ? { ...e, hoursLogged: e.hoursLogged + hrs } : e);
@@ -697,17 +794,20 @@ function logHours(id) {
 }
 
 function toggleAIStatus(id) {
+  if (!requireEditAccess()) return;
   data.ai.entries = data.ai.entries.map(e => e.id === id ? { ...e, status: e.status === 'completed' ? 'in-progress' : 'completed' } : e);
   saveLocal(); render(); closeModal(); toast('Status updated!');
 }
 
 function deleteAI(id) {
+  if (!requireEditAccess()) return;
   data.ai.entries = data.ai.entries.filter(e => e.id !== id);
   saveLocal(); render(); closeModal(); toast('Project removed');
 }
 
 // ===== FITNESS ACTIONS =====
 function openAddWorkout() {
+  if (!requireEditAccess()) return;
   openModal(`
     <h3>💪 Log Workout</h3>
     <div class="form-group"><label class="form-label">Quick Select</label>
@@ -732,6 +832,7 @@ function selectChip(el, type) {
 }
 
 function addWorkout() {
+  if (!requireEditAccess()) return;
   const type = document.getElementById('f-fit-type').value;
   const dur = parseInt(document.getElementById('f-fit-dur').value);
   const notes = document.getElementById('f-fit-notes').value.trim();
@@ -742,6 +843,7 @@ function addWorkout() {
 }
 
 function deleteFitness(id) {
+  if (!requireEditAccess()) return;
   data.fitness.entries = data.fitness.entries.filter(e => e.id !== id);
   saveLocal(); render(); toast('Workout removed');
 }
@@ -812,7 +914,7 @@ function renderBooks() {
     document.getElementById('bookReading').innerHTML = '<div class="empty"><div class="empty-icon">📚</div><div class="empty-text">No books in progress</div></div>';
   } else {
     document.getElementById('bookReading').innerHTML = reading.map(b => `
-      <div class="pbar-wrap" style="cursor:pointer" onclick="openUpdateBook(${b.id})">
+      <div class="pbar-wrap" ${canEdit ? `style="cursor:pointer" onclick="openUpdateBook(${b.id})"` : ''}>
         <div class="pbar-header"><span class="pbar-title">${b.title}</span><span class="pbar-sub">${b.pagesRead}/${b.pages} pp</span></div>
         <div class="pbar"><div class="pbar-fill" style="width:${pct(b.pagesRead, b.pages)}%;background:var(--books)"></div></div>
       </div>
@@ -822,9 +924,9 @@ function renderBooks() {
   const statusColors = { completed: '#7C3AED', reading: '#F59E0B', 'to-read': '#9CA3AF' };
   const statusLabels = { completed: 'Done', reading: 'Reading', 'to-read': 'To Read' };
   document.getElementById('bookList').innerHTML = data.books.entries.length === 0
-    ? '<div class="empty"><div class="empty-text">Import a CSV or add your first book!</div></div>'
+    ? `<div class="empty"><div class="empty-text">${canEdit ? 'Import a CSV or add your first book!' : 'No books logged yet.'}</div></div>`
     : data.books.entries.map(b => `
-      <div class="list-item" onclick="openUpdateBook(${b.id})" style="cursor:pointer">
+      <div class="list-item" ${canEdit ? `onclick="openUpdateBook(${b.id})" style="cursor:pointer"` : ''}>
         <div><div class="list-primary">${b.status === 'completed' ? '✓ ' : ''}${b.title}</div><div class="list-secondary">${b.pages} pages · added ${b.dateAdded}</div></div>
         ${badgeHTML(statusLabels[b.status], statusColors[b.status])}
       </div>
@@ -846,7 +948,7 @@ function renderAI() {
     document.getElementById('aiActive').innerHTML = '<div class="empty"><div class="empty-icon">🧠</div><div class="empty-text">No active projects</div></div>';
   } else {
     document.getElementById('aiActive').innerHTML = active.map(e => `
-      <div class="list-item" style="cursor:pointer" onclick="openLogHours(${e.id})">
+      <div class="list-item" ${canEdit ? `style="cursor:pointer" onclick="openLogHours(${e.id})"` : ''}>
         <div><div class="list-primary">${e.name}</div><div class="list-secondary">${e.hoursLogged}h logged · ${e.type}</div></div>
         ${badgeHTML(e.type === 'product' ? 'Product' : 'Learning', e.type === 'product' ? '#2563EB' : '#93C5FD')}
       </div>
@@ -854,9 +956,9 @@ function renderAI() {
   }
 
   document.getElementById('aiList').innerHTML = data.ai.entries.length === 0
-    ? '<div class="empty"><div class="empty-text">Import a CSV or add your first project!</div></div>'
+    ? `<div class="empty"><div class="empty-text">${canEdit ? 'Import a CSV or add your first project!' : 'No projects logged yet.'}</div></div>`
     : data.ai.entries.map(e => `
-      <div class="list-item" style="cursor:pointer" onclick="openLogHours(${e.id})">
+      <div class="list-item" ${canEdit ? `style="cursor:pointer" onclick="openLogHours(${e.id})"` : ''}>
         <div><div class="list-primary">${e.status === 'completed' ? '✓ ' : ''}${e.name}</div><div class="list-secondary">${e.hoursLogged}h · ${e.type} · ${e.dateAdded}</div></div>
         ${badgeHTML(e.status === 'completed' ? 'Done' : 'Active', e.status === 'completed' ? '#10B981' : '#3B82F6')}
       </div>
@@ -902,19 +1004,36 @@ function renderFitness() {
   // Recent
   const recent = [...data.fitness.entries].reverse().slice(0, 15);
   document.getElementById('fitList').innerHTML = recent.length === 0
-    ? '<div class="empty"><div class="empty-text">Import a CSV or log your first workout!</div></div>'
+    ? `<div class="empty"><div class="empty-text">${canEdit ? 'Import a CSV or log your first workout!' : 'No workouts logged yet.'}</div></div>`
     : recent.map(e => `
       <div class="list-item">
         <div><div class="list-primary">${e.type}</div><div class="list-secondary">${e.notes ? e.notes + ' · ' : ''}${e.date}</div></div>
         <div style="display:flex;align-items:center;gap:8px">
           <span style="font-size:13px;color:var(--muted)">${e.duration}m</span>
-          <button class="btn btn-sm btn-outline" style="padding:4px 8px;font-size:11px;color:#EF4444;border-color:#FCA5A5;" onclick="deleteFitness(${e.id})">✕</button>
+          ${canEdit ? `<button class="btn btn-sm btn-outline" style="padding:4px 8px;font-size:11px;color:#EF4444;border-color:#FCA5A5;" onclick="deleteFitness(${e.id})">✕</button>` : ''}
         </div>
       </div>
     `).join('');
 }
 
 // ===== INIT =====
+document.getElementById('adminAuthBtn')?.addEventListener('click', handleAdminAuthClick);
+refreshAccessUI();
+if (ADMIN_MODE && auth) {
+  auth.onAuthStateChanged(user => {
+    currentUser = user || null;
+    canEdit = isOwner(currentUser);
+    if (currentUser) console.info('Signed in user:', { uid: currentUser.uid, email: currentUser.email || null, canEdit });
+    refreshAccessUI();
+    render();
+    if (!_authInitialized) {
+      if (currentUser && canEdit) toast('Admin mode unlocked');
+      else if (currentUser && !canEdit) toast('Signed in, but not owner');
+      else toast('Admin mode: sign in required');
+      _authInitialized = true;
+    }
+  }, err => console.warn('Auth listener error:', err));
+}
 render();
 enableNavDebug();
 const initialTab = getTabFromHash();
