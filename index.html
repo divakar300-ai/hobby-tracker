@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Hobby Tracker — Divakar</title>
+<style>
+  :root {
+    --books: #8B5CF6; --books-light: #EDE9FE; --books-bg: #F5F3FF;
+    --ai: #3B82F6; --ai-light: #DBEAFE; --ai-bg: #EFF6FF;
+    --fit: #10B981; --fit-light: #D1FAE5; --fit-bg: #ECFDF5;
+    --bg: #F8FAFC; --card: #FFFFFF; --text: #1F2937; --muted: #6B7280; --light: #9CA3AF; --border: #E5E7EB;
+    --radius: 14px; --shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 80px; }
+
+  /* Header */
+  .header { background: var(--card); padding: 16px 20px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 50; }
+  .header h1 { font-size: 22px; font-weight: 800; background: linear-gradient(135deg, #8B5CF6, #3B82F6, #10B981); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .header .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .header-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .btn-primary { background: #3B82F6; color: white; }
+  .btn-sm { padding: 6px 10px; font-size: 12px; border-radius: 6px; }
+  .btn-outline { background: transparent; border: 1.5px solid var(--border); color: var(--muted); }
+  .btn-books { background: var(--books); color: white; }
+  .btn-ai { background: var(--ai); color: white; }
+  .btn-fit { background: var(--fit); color: white; }
+  .btn-export { background: #F59E0B; color: white; }
+  .btn:active { transform: scale(0.97); opacity: 0.9; }
+
+  /* Tabs */
+  .tabs { display: flex; background: var(--card); border-bottom: 1px solid var(--border); overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tab { flex: 1; min-width: 0; padding: 12px 8px; border: none; background: none; font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; text-align: center; border-bottom: 3px solid transparent; transition: all 0.2s; white-space: nowrap; }
+  .tab.active { color: var(--text); font-weight: 700; border-bottom-color: #3B82F6; }
+  .tab-icon { display: block; font-size: 18px; margin-bottom: 2px; }
+
+  /* Content */
+  .content { max-width: 600px; margin: 0 auto; padding: 16px; }
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* Cards */
+  .card { background: var(--card); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .card-title { font-size: 15px; font-weight: 700; }
+
+  /* Stats row */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+  .stat { background: var(--card); border-radius: 10px; padding: 12px; text-align: center; box-shadow: var(--shadow); }
+  .stat-value { font-size: 22px; font-weight: 800; }
+  .stat-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* Progress bar */
+  .pbar-wrap { margin-bottom: 12px; }
+  .pbar-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .pbar-title { font-size: 13px; font-weight: 600; }
+  .pbar-sub { font-size: 12px; color: var(--muted); }
+  .pbar { height: 8px; background: #E5E7EB; border-radius: 8px; overflow: hidden; }
+  .pbar-fill { height: 100%; border-radius: 8px; transition: width 0.6s ease; }
+
+  /* Progress ring (SVG) */
+  .ring-wrap { display: flex; flex-direction: column; align-items: center; }
+  .ring-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* List items */
+  .list-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #F3F4F6; }
+  .list-item:last-child { border: none; }
+  .list-primary { font-size: 14px; font-weight: 600; }
+  .list-secondary { font-size: 12px; color: var(--muted); }
+
+  /* Badge */
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+
+  /* Quick Log floating button */
+  .fab { position: fixed; bottom: 80px; right: 20px; width: 54px; height: 54px; border-radius: 27px; border: none; font-size: 26px; color: white; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.2); z-index: 40; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }
+  .fab:active { transform: scale(0.92); }
+
+  /* Modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); backdrop-filter: blur(4px); z-index: 100; align-items: flex-end; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: white; border-radius: 20px 20px 0 0; width: 100%; max-width: 500px; max-height: 85vh; overflow-y: auto; padding: 24px 20px 32px; animation: slideUp 0.3s ease; }
+  @media (min-width: 500px) { .modal-overlay.open { align-items: center; } .modal { border-radius: 16px; max-height: 80vh; } }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .modal h3 { font-size: 18px; font-weight: 700; margin-bottom: 18px; }
+  .modal .close { position: absolute; top: 16px; right: 16px; background: none; border: none; font-size: 22px; color: var(--light); cursor: pointer; }
+
+  /* Form */
+  .form-group { margin-bottom: 14px; }
+  .form-label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 5px; }
+  .form-input, .form-select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #D1D5DB; font-size: 15px; outline: none; -webkit-appearance: none; }
+  .form-input:focus, .form-select:focus { border-color: #3B82F6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+  .form-select { background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='%236B7280'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E") no-repeat right 12px center; }
+
+  /* Quick log chips */
+  .quick-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .chip { padding: 10px 16px; border-radius: 24px; border: 1.5px solid var(--border); background: white; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+  .chip:active { transform: scale(0.96); }
+  .chip.selected { border-color: #3B82F6; background: #EFF6FF; color: #3B82F6; }
+
+  /* Overview cards */
+  .overview-card { background: var(--card); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); cursor: pointer; transition: transform 0.15s; border-left: 4px solid transparent; }
+  .overview-card:active { transform: scale(0.98); }
+  .overview-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .overview-card .big-num { font-size: 28px; font-weight: 800; }
+  .overview-card .big-sub { font-size: 13px; color: var(--muted); font-weight: 400; }
+
+  /* Toast */
+  .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #1F2937; color: white; padding: 10px 20px; border-radius: 10px; font-size: 14px; font-weight: 500; z-index: 200; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+
+  /* Data section */
+  .data-section { background: #FAFAFA; border-radius: 12px; padding: 14px; margin-top: 12px; }
+  .data-section h4 { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+
+  /* Empty state */
+  .empty { text-align: center; padding: 30px 20px; color: var(--muted); }
+  .empty-icon { font-size: 40px; margin-bottom: 8px; }
+  .empty-text { font-size: 14px; }
+
+  /* File input hidden */
+  .file-input { display: none; }
+
+  /* Responsive tweaks */
+  @media (max-width: 380px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .stat-value { font-size: 18px; }
+    .header-actions { gap: 6px; }
+    .btn { padding: 6px 10px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Header -->
+<div class="header">
+  <h1>Hobby Tracker</h1>
+  <div class="sub" id="quote"></div>
+  <div class="header-actions">
+    <button class="btn btn-outline btn-sm" onclick="importAllCSV()">📂 Import CSV</button>
+    <button class="btn btn-export btn-sm" onclick="exportAllCSV()">💾 Export All CSV</button>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab active" data-tab="overview"><span class="tab-icon">◉</span>Overview</button>
+  <button class="tab" data-tab="books"><span class="tab-icon">📖</span>Reading</button>
+  <button class="tab" data-tab="ai"><span class="tab-icon">🧠</span>AI</button>
+  <button class="tab" data-tab="fitness"><span class="tab-icon">💪</span>Fitness</button>
+</div>
+
+<!-- Content -->
+<div class="content">
+
+  <!-- ===== OVERVIEW ===== -->
+  <div class="section active" id="sec-overview">
+    <div style="text-align:center; margin: 16px 0 20px;">
+      <svg id="overallRing" width="130" height="130"></svg>
+      <div style="font-size:12px; color:var(--muted);">overall progress</div>
+    </div>
+    <div id="overviewCards"></div>
+  </div>
+
+  <!-- ===== BOOKS ===== -->
+  <div class="section" id="sec-books">
+    <div class="stats" id="bookStats"></div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📚 Yearly Goal</span>
+        <button class="btn btn-sm btn-outline" onclick="editBookGoal()">Edit</button>
+      </div>
+      <div id="bookGoalBar"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">📖 Currently Reading</span></div>
+      <div id="bookReading"></div>
+    </div>
+    <div class="data-section">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h4>Library</h4>
+        <button class="btn btn-sm btn-outline" onclick="exportCSV('books')">Export CSV</button>
+      </div>
+      <div id="bookList"></div>
+    </div>
+  </div>
+
+  <!-- ===== AI ===== -->
+  <div class="section" id="sec-ai">
+    <div class="stats" id="aiStats"></div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">🚧 Active Projects</span></div>
+      <div id="aiActive"></div>
+    </div>
+    <div class="data-section">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h4>All Projects</h4>
+        <button class="btn btn-sm btn-outline" onclick="exportCSV('ai')">Export CSV</button>
+      </div>
+      <div id="aiList"></div>
+    </div>
+  </div>
+
+  <!-- ===== FITNESS ===== -->
+  <div class="section" id="sec-fitness">
+    <div class="stats" id="fitStats"></div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📅 This Week</span>
+        <span id="fitWeekLabel" style="font-size:12px; color:var(--muted);"></span>
+      </div>
+      <div id="fitWeekBar"></div>
+      <div id="fitWeekDots" style="display:flex; justify-content:space-between; margin-top:10px;"></div>
+    </div>
+    <div class="data-section">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h4>Recent Workouts</h4>
+        <button class="btn btn-sm btn-outline" onclick="exportCSV('fitness')">Export CSV</button>
+      </div>
+      <div id="fitList"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FAB (quick add) -->
+<button class="fab" id="fab" style="background:linear-gradient(135deg,#8B5CF6,#3B82F6);" onclick="openQuickAdd()">+</button>
+
+<!-- Hidden file inputs -->
+<input type="file" class="file-input" id="importFile" accept=".csv" multiple onchange="handleImport(event)">
+
+<!-- Modal Container -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()" id="modalContent"></div>
+</div>
+
+<script>
+// ===== DATA =====
+const QUOTES = [
+  "Small daily improvements lead to staggering long-term results.",
+  "The expert in anything was once a beginner.",
+  "Progress, not perfection.",
+  "Discipline is choosing what you want most over what you want now.",
+  "You don't have to be great to start, but you have to start to be great.",
+  "Consistency beats intensity.",
+  "The best time to start was yesterday. The next best time is now.",
+  "What gets measured gets managed.",
+];
+
+let data = {
+  books: { entries: [], goal: 24 },
+  ai: { entries: [], weeklyGoalHours: 10 },
+  fitness: { entries: [], weeklyGoal: 5 }
+};
+
+// Try loading from browser storage as convenience cache
+try {
+  const saved = window.sessionStorage?.getItem?.('hobbyData');
+  if (saved) data = JSON.parse(saved);
+} catch(e) {}
+
+function saveLocal() {
+  try { window.sessionStorage?.setItem?.('hobbyData', JSON.stringify(data)); } catch(e) {}
+}
+
+// ===== TOAST =====
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+// ===== TABS =====
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('sec-' + tab.dataset.tab).classList.add('active');
+    updateFabColor(tab.dataset.tab);
+  });
+});
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => { t.classList.toggle('active', t.dataset.tab === name); });
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('sec-' + name).classList.add('active');
+  updateFabColor(name);
+}
+
+function updateFabColor(tab) {
+  const fab = document.getElementById('fab');
+  const colors = { overview: 'linear-gradient(135deg,#8B5CF6,#3B82F6)', books: '#8B5CF6', ai: '#3B82F6', fitness: '#10B981' };
+  fab.style.background = colors[tab] || colors.overview;
+}
+
+// ===== HELPERS =====
+function today() { return new Date().toISOString().slice(0, 10); }
+function getWeekStart() {
+  const d = new Date(); d.setDate(d.getDate() - d.getDay()); d.setHours(0,0,0,0); return d;
+}
+function pct(v, max) { return max > 0 ? Math.min(Math.round((v/max)*100), 100) : 0; }
+
+function progressBarHTML(value, max, color, label) {
+  const p = pct(value, max);
+  return `<div class="pbar-wrap">
+    ${label ? `<div class="pbar-header"><span class="pbar-title">${label}</span><span class="pbar-sub">${value}/${max}</span></div>` : ''}
+    <div class="pbar"><div class="pbar-fill" style="width:${p}%;background:${color}"></div></div>
+  </div>`;
+}
+
+function ringHTML(id, pctVal, color, size, label) {
+  const r = (size - 10) / 2;
+  const c = 2 * Math.PI * r;
+  const offset = c - (pctVal / 100) * c;
+  return `<svg width="${size}" height="${size}">
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#E5E7EB" stroke-width="10"/>
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="10"
+      stroke-dasharray="${c}" stroke-dashoffset="${offset}" stroke-linecap="round"
+      transform="rotate(-90 ${size/2} ${size/2})" style="transition:stroke-dashoffset 0.8s"/>
+    <text x="${size/2}" y="${size/2 - 4}" text-anchor="middle" font-size="${size*0.22}" font-weight="700" fill="#1F2937">${pctVal}%</text>
+    <text x="${size/2}" y="${size/2 + 14}" text-anchor="middle" font-size="${size*0.1}" fill="#6B7280">${label}</text>
+  </svg>`;
+}
+
+function badgeHTML(text, color) {
+  return `<span class="badge" style="background:${color}18;color:${color}">${text}</span>`;
+}
+
+// ===== CSV IMPORT / EXPORT =====
+function escapeCSV(val) {
+  const s = String(val ?? '');
+  return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = parseCSVLine(lines[0]);
+  return lines.slice(1).filter(l => l.trim()).map(line => {
+    const vals = parseCSVLine(line);
+    const obj = {};
+    headers.forEach((h, i) => obj[h.trim()] = vals[i]?.trim() ?? '');
+    return obj;
+  });
+}
+
+function parseCSVLine(line) {
+  const result = []; let current = ''; let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i+1] === '"') { current += '"'; i++; }
+      else if (ch === '"') inQuotes = false;
+      else current += ch;
+    } else {
+      if (ch === '"') inQuotes = true;
+      else if (ch === ',') { result.push(current); current = ''; }
+      else current += ch;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+function exportCSV(type) {
+  let csv = '';
+  if (type === 'books') {
+    csv = 'id,title,pages,pagesRead,status,dateAdded,dateCompleted\n';
+    data.books.entries.forEach(b => {
+      csv += [b.id, escapeCSV(b.title), b.pages, b.pagesRead, b.status, b.dateAdded, b.dateCompleted || ''].join(',') + '\n';
+    });
+  } else if (type === 'ai') {
+    csv = 'id,name,type,hoursLogged,status,dateAdded\n';
+    data.ai.entries.forEach(e => {
+      csv += [e.id, escapeCSV(e.name), e.type, e.hoursLogged, e.status, e.dateAdded].join(',') + '\n';
+    });
+  } else if (type === 'fitness') {
+    csv = 'id,type,duration,date,notes\n';
+    data.fitness.entries.forEach(e => {
+      csv += [e.id, e.type, e.duration, e.date, escapeCSV(e.notes || '')].join(',') + '\n';
+    });
+  }
+  downloadFile(`${type}.csv`, csv, 'text/csv');
+  toast(`${type}.csv exported!`);
+}
+
+function exportAllCSV() {
+  exportCSV('books');
+  setTimeout(() => exportCSV('ai'), 300);
+  setTimeout(() => exportCSV('fitness'), 600);
+}
+
+function downloadFile(name, content, type) {
+  const blob = new Blob([content], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+function importAllCSV() { document.getElementById('importFile').click(); }
+
+function handleImport(event) {
+  const files = event.target.files;
+  Array.from(files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      const rows = parseCSV(text);
+      if (rows.length === 0) return;
+
+      const name = file.name.toLowerCase();
+      const cols = Object.keys(rows[0]).map(c => c.toLowerCase());
+
+      if (name.includes('book') || cols.includes('title') && cols.includes('pages')) {
+        data.books.entries = rows.map(r => ({
+          id: parseInt(r.id) || Date.now() + Math.random()*1000,
+          title: r.title || '', pages: parseInt(r.pages) || 0, pagesRead: parseInt(r.pagesRead) || 0,
+          status: r.status || 'to-read', dateAdded: r.dateAdded || today(), dateCompleted: r.dateCompleted || null
+        }));
+        toast(`Imported ${rows.length} books!`);
+      } else if (name.includes('ai') || name.includes('project') || cols.includes('hourslogged') || cols.includes('hoursLogged')) {
+        data.ai.entries = rows.map(r => ({
+          id: parseInt(r.id) || Date.now() + Math.random()*1000,
+          name: r.name || '', type: r.type || 'learning', hoursLogged: parseFloat(r.hoursLogged) || 0,
+          status: r.status || 'in-progress', dateAdded: r.dateAdded || today()
+        }));
+        toast(`Imported ${rows.length} AI projects!`);
+      } else if (name.includes('fit') || name.includes('workout') || cols.includes('duration')) {
+        data.fitness.entries = rows.map(r => ({
+          id: parseInt(r.id) || Date.now() + Math.random()*1000,
+          type: r.type || 'Other', duration: parseInt(r.duration) || 0,
+          date: r.date || today(), notes: r.notes || ''
+        }));
+        toast(`Imported ${rows.length} workouts!`);
+      } else {
+        toast('Could not detect CSV type');
+      }
+      saveLocal();
+      render();
+    };
+    reader.readAsText(file);
+  });
+  event.target.value = '';
+}
+
+// ===== MODAL =====
+function openModal(html) {
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('modalOverlay').classList.add('open');
+}
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+}
+
+// ===== QUICK ADD =====
+function openQuickAdd() {
+  const activeTab = document.querySelector('.tab.active')?.dataset.tab || 'overview';
+  if (activeTab === 'books' || activeTab === 'overview') openAddBook();
+  else if (activeTab === 'ai') openAddAI();
+  else if (activeTab === 'fitness') openAddWorkout();
+  else openAddBook();
+}
+
+// ===== BOOK ACTIONS =====
+function openAddBook() {
+  openModal(`
+    <h3>📖 Add a Book</h3>
+    <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="f-book-title" placeholder="e.g. Atomic Habits"></div>
+    <div class="form-group"><label class="form-label">Total Pages</label><input class="form-input" id="f-book-pages" type="number" inputmode="numeric" placeholder="e.g. 320"></div>
+    <div class="form-group"><label class="form-label">Status</label>
+      <select class="form-select" id="f-book-status"><option value="to-read">To Read</option><option value="reading">Currently Reading</option><option value="completed">Completed</option></select>
+    </div>
+    <button class="btn btn-books" style="width:100%;justify-content:center;margin-top:8px;" onclick="addBook()">Add Book</button>
+  `);
+}
+
+function addBook() {
+  const title = document.getElementById('f-book-title').value.trim();
+  const pages = parseInt(document.getElementById('f-book-pages').value) || 0;
+  const status = document.getElementById('f-book-status').value;
+  if (!title) return toast('Enter a title');
+  data.books.entries.push({
+    id: Date.now(), title, pages, pagesRead: status === 'completed' ? pages : 0,
+    status, dateAdded: today(), dateCompleted: status === 'completed' ? today() : null
+  });
+  saveLocal(); render(); closeModal(); toast(`"${title}" added!`);
+  switchTab('books');
+}
+
+function openUpdateBook(id) {
+  const b = data.books.entries.find(x => x.id === id);
+  if (!b) return;
+  openModal(`
+    <h3>📖 Update: ${b.title}</h3>
+    <div class="form-group"><label class="form-label">Pages Read (of ${b.pages})</label>
+      <input class="form-input" id="f-upd-pages" type="number" inputmode="numeric" value="${b.pagesRead}">
+    </div>
+    <button class="btn btn-books" style="width:100%;justify-content:center;margin-top:8px;" onclick="updateBook(${id})">Update Progress</button>
+    <button class="btn btn-outline" style="width:100%;justify-content:center;margin-top:8px;color:#EF4444;border-color:#EF4444;" onclick="deleteBook(${id})">Remove Book</button>
+  `);
+}
+
+function updateBook(id) {
+  const pages = parseInt(document.getElementById('f-upd-pages').value);
+  if (isNaN(pages)) return;
+  data.books.entries = data.books.entries.map(b => {
+    if (b.id !== id) return b;
+    const pr = Math.min(pages, b.pages);
+    return { ...b, pagesRead: pr, status: pr >= b.pages ? 'completed' : pr > 0 ? 'reading' : 'to-read', dateCompleted: pr >= b.pages ? today() : null };
+  });
+  saveLocal(); render(); closeModal(); toast('Progress updated!');
+}
+
+function deleteBook(id) {
+  data.books.entries = data.books.entries.filter(b => b.id !== id);
+  saveLocal(); render(); closeModal(); toast('Book removed');
+}
+
+function editBookGoal() {
+  openModal(`
+    <h3>📚 Set Yearly Goal</h3>
+    <div class="form-group"><label class="form-label">Books to read this year</label>
+      <input class="form-input" id="f-book-goal" type="number" inputmode="numeric" value="${data.books.goal}">
+    </div>
+    <button class="btn btn-books" style="width:100%;justify-content:center;margin-top:8px;" onclick="saveBookGoal()">Save Goal</button>
+  `);
+}
+
+function saveBookGoal() {
+  data.books.goal = parseInt(document.getElementById('f-book-goal').value) || 12;
+  saveLocal(); render(); closeModal(); toast('Goal updated!');
+}
+
+// ===== AI ACTIONS =====
+function openAddAI() {
+  openModal(`
+    <h3>🧠 Add AI Project</h3>
+    <div class="form-group"><label class="form-label">Name</label><input class="form-input" id="f-ai-name" placeholder="e.g. RAG Chatbot"></div>
+    <div class="form-group"><label class="form-label">Type</label>
+      <select class="form-select" id="f-ai-type"><option value="learning">Learning</option><option value="product">Product / Build</option></select>
+    </div>
+    <div class="form-group"><label class="form-label">Hours Already Logged</label><input class="form-input" id="f-ai-hours" type="number" inputmode="decimal" placeholder="0" value="0"></div>
+    <button class="btn btn-ai" style="width:100%;justify-content:center;margin-top:8px;" onclick="addAI()">Add Project</button>
+  `);
+}
+
+function addAI() {
+  const name = document.getElementById('f-ai-name').value.trim();
+  const type = document.getElementById('f-ai-type').value;
+  const hours = parseFloat(document.getElementById('f-ai-hours').value) || 0;
+  if (!name) return toast('Enter a name');
+  data.ai.entries.push({ id: Date.now(), name, type, hoursLogged: hours, status: 'in-progress', dateAdded: today() });
+  saveLocal(); render(); closeModal(); toast(`"${name}" added!`);
+  switchTab('ai');
+}
+
+function openLogHours(id) {
+  const e = data.ai.entries.find(x => x.id === id);
+  if (!e) return;
+  openModal(`
+    <h3>⏱ Log Hours: ${e.name}</h3>
+    <div class="form-group"><label class="form-label">Hours to Add</label>
+      <input class="form-input" id="f-log-hrs" type="number" inputmode="decimal" placeholder="e.g. 2">
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ai" style="flex:1;justify-content:center;margin-top:8px;" onclick="logHours(${id})">Log Hours</button>
+      <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="toggleAIStatus(${id})">${e.status === 'completed' ? 'Reopen' : 'Complete'}</button>
+    </div>
+    <button class="btn btn-outline" style="width:100%;justify-content:center;margin-top:8px;color:#EF4444;border-color:#EF4444;" onclick="deleteAI(${id})">Remove Project</button>
+  `);
+}
+
+function logHours(id) {
+  const hrs = parseFloat(document.getElementById('f-log-hrs').value);
+  if (isNaN(hrs) || hrs <= 0) return toast('Enter hours');
+  data.ai.entries = data.ai.entries.map(e => e.id === id ? { ...e, hoursLogged: e.hoursLogged + hrs } : e);
+  saveLocal(); render(); closeModal(); toast(`${hrs}h logged!`);
+}
+
+function toggleAIStatus(id) {
+  data.ai.entries = data.ai.entries.map(e => e.id === id ? { ...e, status: e.status === 'completed' ? 'in-progress' : 'completed' } : e);
+  saveLocal(); render(); closeModal(); toast('Status updated!');
+}
+
+function deleteAI(id) {
+  data.ai.entries = data.ai.entries.filter(e => e.id !== id);
+  saveLocal(); render(); closeModal(); toast('Project removed');
+}
+
+// ===== FITNESS ACTIONS =====
+function openAddWorkout() {
+  openModal(`
+    <h3>💪 Log Workout</h3>
+    <div class="form-group"><label class="form-label">Quick Select</label>
+      <div class="quick-chips" id="fitChips">
+        <div class="chip selected" onclick="selectChip(this,'Strength')">🏋️ Strength</div>
+        <div class="chip" onclick="selectChip(this,'Cardio')">🏃 Cardio</div>
+        <div class="chip" onclick="selectChip(this,'Yoga')">🧘 Yoga</div>
+        <div class="chip" onclick="selectChip(this,'Other')">⚡ Other</div>
+      </div>
+    </div>
+    <input type="hidden" id="f-fit-type" value="Strength">
+    <div class="form-group"><label class="form-label">Duration (minutes)</label><input class="form-input" id="f-fit-dur" type="number" inputmode="numeric" placeholder="e.g. 45"></div>
+    <div class="form-group"><label class="form-label">Notes (optional)</label><input class="form-input" id="f-fit-notes" placeholder="e.g. Push day, 5K run"></div>
+    <button class="btn btn-fit" style="width:100%;justify-content:center;margin-top:8px;" onclick="addWorkout()">Log Workout</button>
+  `);
+}
+
+function selectChip(el, type) {
+  el.closest('.quick-chips').querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('f-fit-type').value = type;
+}
+
+function addWorkout() {
+  const type = document.getElementById('f-fit-type').value;
+  const dur = parseInt(document.getElementById('f-fit-dur').value);
+  const notes = document.getElementById('f-fit-notes').value.trim();
+  if (!dur || dur <= 0) return toast('Enter duration');
+  data.fitness.entries.push({ id: Date.now(), type, duration: dur, date: today(), notes });
+  saveLocal(); render(); closeModal(); toast(`${type} workout logged!`);
+  switchTab('fitness');
+}
+
+function deleteFitness(id) {
+  data.fitness.entries = data.fitness.entries.filter(e => e.id !== id);
+  saveLocal(); render(); toast('Workout removed');
+}
+
+// ===== RENDER =====
+function render() {
+  // Quote
+  document.getElementById('quote').textContent = '"' + QUOTES[Math.floor(Math.random() * QUOTES.length)] + '"';
+
+  renderOverview();
+  renderBooks();
+  renderAI();
+  renderFitness();
+}
+
+function renderOverview() {
+  const bc = data.books.entries.filter(b => b.status === 'completed').length;
+  const ah = data.ai.entries.reduce((s, e) => s + e.hoursLogged, 0);
+  const ws = getWeekStart();
+  const fw = data.fitness.entries.filter(e => new Date(e.date) >= ws).length;
+
+  const overall = Math.round(
+    (pct(bc, data.books.goal) * 0.333) + (pct(Math.min(ah, 100), 100) * 0.333) + (pct(fw, data.fitness.weeklyGoal) * 0.334)
+  );
+
+  document.getElementById('overallRing').outerHTML = ringHTML('overallRing', overall, '#3B82F6', 130, 'overall');
+
+  const reading = data.books.entries.filter(b => b.status === 'reading').length;
+  const aiActive = data.ai.entries.filter(e => e.status === 'in-progress').length;
+  const totalMin = data.fitness.entries.reduce((s, e) => s + e.duration, 0);
+
+  document.getElementById('overviewCards').innerHTML = `
+    <div class="overview-card" style="border-left-color:var(--books)" onclick="switchTab('books')">
+      <h3><span>📖</span> Reading</h3>
+      <div><span class="big-num" style="color:var(--books)">${bc}</span><span class="big-sub"> / ${data.books.goal} books this year</span></div>
+      ${progressBarHTML(bc, data.books.goal, 'var(--books)', '')}
+      <div style="font-size:12px;color:var(--muted);margin-top:6px;">${reading} currently reading</div>
+    </div>
+    <div class="overview-card" style="border-left-color:var(--ai)" onclick="switchTab('ai')">
+      <h3><span>🧠</span> AI & Products</h3>
+      <div><span class="big-num" style="color:var(--ai)">${ah}h</span><span class="big-sub"> invested</span></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px;">${aiActive} active project${aiActive !== 1 ? 's' : ''} · ${data.ai.entries.filter(e=>e.type==='product').length} products</div>
+    </div>
+    <div class="overview-card" style="border-left-color:var(--fit)" onclick="switchTab('fitness')">
+      <h3><span>💪</span> Fitness</h3>
+      <div><span class="big-num" style="color:var(--fit)">${fw}</span><span class="big-sub"> / ${data.fitness.weeklyGoal} workouts this week</span></div>
+      ${progressBarHTML(fw, data.fitness.weeklyGoal, 'var(--fit)', '')}
+      <div style="font-size:12px;color:var(--muted);margin-top:6px;">${totalMin} total minutes logged</div>
+    </div>
+  `;
+}
+
+function renderBooks() {
+  const completed = data.books.entries.filter(b => b.status === 'completed').length;
+  const reading = data.books.entries.filter(b => b.status === 'reading');
+  const totalPages = data.books.entries.reduce((s,b) => s + b.pagesRead, 0);
+
+  document.getElementById('bookStats').innerHTML = `
+    <div class="stat"><div class="stat-value" style="color:var(--books)">${completed}</div><div class="stat-label">Completed</div></div>
+    <div class="stat"><div class="stat-value" style="color:#F59E0B">${reading.length}</div><div class="stat-label">Reading</div></div>
+    <div class="stat"><div class="stat-value" style="color:var(--books)">${totalPages.toLocaleString()}</div><div class="stat-label">Pages Read</div></div>
+  `;
+
+  document.getElementById('bookGoalBar').innerHTML = ringHTML('bookRing', pct(completed, data.books.goal), 'var(--books)', 100, `${completed}/${data.books.goal}`);
+
+  if (reading.length === 0) {
+    document.getElementById('bookReading').innerHTML = '<div class="empty"><div class="empty-icon">📚</div><div class="empty-text">No books in progress</div></div>';
+  } else {
+    document.getElementById('bookReading').innerHTML = reading.map(b => `
+      <div class="pbar-wrap" style="cursor:pointer" onclick="openUpdateBook(${b.id})">
+        <div class="pbar-header"><span class="pbar-title">${b.title}</span><span class="pbar-sub">${b.pagesRead}/${b.pages} pp</span></div>
+        <div class="pbar"><div class="pbar-fill" style="width:${pct(b.pagesRead, b.pages)}%;background:var(--books)"></div></div>
+      </div>
+    `).join('');
+  }
+
+  const statusColors = { completed: '#7C3AED', reading: '#F59E0B', 'to-read': '#9CA3AF' };
+  const statusLabels = { completed: 'Done', reading: 'Reading', 'to-read': 'To Read' };
+  document.getElementById('bookList').innerHTML = data.books.entries.length === 0
+    ? '<div class="empty"><div class="empty-text">Import a CSV or add your first book!</div></div>'
+    : data.books.entries.map(b => `
+      <div class="list-item" onclick="openUpdateBook(${b.id})" style="cursor:pointer">
+        <div><div class="list-primary">${b.status === 'completed' ? '✓ ' : ''}${b.title}</div><div class="list-secondary">${b.pages} pages · added ${b.dateAdded}</div></div>
+        ${badgeHTML(statusLabels[b.status], statusColors[b.status])}
+      </div>
+    `).join('');
+}
+
+function renderAI() {
+  const totalHrs = data.ai.entries.reduce((s,e) => s + e.hoursLogged, 0);
+  const products = data.ai.entries.filter(e => e.type === 'product').length;
+  const active = data.ai.entries.filter(e => e.status === 'in-progress');
+
+  document.getElementById('aiStats').innerHTML = `
+    <div class="stat"><div class="stat-value" style="color:var(--ai)">${totalHrs}h</div><div class="stat-label">Total Hours</div></div>
+    <div class="stat"><div class="stat-value" style="color:#2563EB">${products}</div><div class="stat-label">Products</div></div>
+    <div class="stat"><div class="stat-value" style="color:#93C5FD">${active.length}</div><div class="stat-label">Active</div></div>
+  `;
+
+  if (active.length === 0) {
+    document.getElementById('aiActive').innerHTML = '<div class="empty"><div class="empty-icon">🧠</div><div class="empty-text">No active projects</div></div>';
+  } else {
+    document.getElementById('aiActive').innerHTML = active.map(e => `
+      <div class="list-item" style="cursor:pointer" onclick="openLogHours(${e.id})">
+        <div><div class="list-primary">${e.name}</div><div class="list-secondary">${e.hoursLogged}h logged · ${e.type}</div></div>
+        ${badgeHTML(e.type === 'product' ? 'Product' : 'Learning', e.type === 'product' ? '#2563EB' : '#93C5FD')}
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('aiList').innerHTML = data.ai.entries.length === 0
+    ? '<div class="empty"><div class="empty-text">Import a CSV or add your first project!</div></div>'
+    : data.ai.entries.map(e => `
+      <div class="list-item" style="cursor:pointer" onclick="openLogHours(${e.id})">
+        <div><div class="list-primary">${e.status === 'completed' ? '✓ ' : ''}${e.name}</div><div class="list-secondary">${e.hoursLogged}h · ${e.type} · ${e.dateAdded}</div></div>
+        ${badgeHTML(e.status === 'completed' ? 'Done' : 'Active', e.status === 'completed' ? '#10B981' : '#3B82F6')}
+      </div>
+    `).join('');
+}
+
+function renderFitness() {
+  const ws = getWeekStart();
+  const thisWeek = data.fitness.entries.filter(e => new Date(e.date) >= ws);
+  const totalMin = data.fitness.entries.reduce((s,e) => s + e.duration, 0);
+  const totalWorkouts = data.fitness.entries.length;
+
+  document.getElementById('fitStats').innerHTML = `
+    <div class="stat"><div class="stat-value" style="color:var(--fit)">${thisWeek.length}</div><div class="stat-label">This Week</div></div>
+    <div class="stat"><div class="stat-value" style="color:#059669">${totalWorkouts}</div><div class="stat-label">Total</div></div>
+    <div class="stat"><div class="stat-value" style="color:#F59E0B">${totalMin}m</div><div class="stat-label">Minutes</div></div>
+  `;
+
+  document.getElementById('fitWeekLabel').textContent = `${thisWeek.length} / ${data.fitness.weeklyGoal}`;
+  document.getElementById('fitWeekBar').innerHTML = progressBarHTML(thisWeek.length, data.fitness.weeklyGoal, 'var(--fit)', '');
+
+  // Week dots
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let dotsHTML = '';
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(ws);
+    d.setDate(d.getDate() + i);
+    const ds = d.toISOString().slice(0,10);
+    const hasWorkout = data.fitness.entries.some(e => e.date === ds);
+    const isToday = ds === today();
+    dotsHTML += `<div style="text-align:center;flex:1">
+      <div style="width:28px;height:28px;border-radius:14px;margin:0 auto 2px;display:flex;align-items:center;justify-content:center;
+        background:${hasWorkout ? 'var(--fit)' : isToday ? '#E5E7EB' : 'transparent'};
+        border:${isToday && !hasWorkout ? '2px solid var(--fit)' : 'none'};
+        color:${hasWorkout ? 'white' : 'var(--muted)'};font-size:11px;font-weight:600;">
+        ${hasWorkout ? '✓' : ''}
+      </div>
+      <div style="font-size:10px;color:${isToday ? 'var(--text)' : 'var(--light)'};font-weight:${isToday ? 700 : 400}">${days[i]}</div>
+    </div>`;
+  }
+  document.getElementById('fitWeekDots').innerHTML = dotsHTML;
+
+  // Recent
+  const recent = [...data.fitness.entries].reverse().slice(0, 15);
+  document.getElementById('fitList').innerHTML = recent.length === 0
+    ? '<div class="empty"><div class="empty-text">Import a CSV or log your first workout!</div></div>'
+    : recent.map(e => `
+      <div class="list-item">
+        <div><div class="list-primary">${e.type}</div><div class="list-secondary">${e.notes ? e.notes + ' · ' : ''}${e.date}</div></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:13px;color:var(--muted)">${e.duration}m</span>
+          <button class="btn btn-sm btn-outline" style="padding:4px 8px;font-size:11px;color:#EF4444;border-color:#FCA5A5;" onclick="deleteFitness(${e.id})">✕</button>
+        </div>
+      </div>
+    `).join('');
+}
+
+// ===== INIT =====
+render();
+</script>
+</body>
+</html>

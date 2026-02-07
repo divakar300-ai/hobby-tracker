@@ -1,0 +1,4 @@
+id,name,type,hoursLogged,status,dateAdded
+1,Fine-tuning LLMs course,learning,18,in-progress,2026-01-10
+2,AI-powered resume screener,product,32,in-progress,2026-01-15
+3,Prompt Engineering basics,learning,8,completed,2026-01-02
