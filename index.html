@@ -134,6 +134,9 @@
     .btn { padding: 6px 10px; font-size: 12px; }
   }
 </style>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -243,6 +246,19 @@
 </div>
 
 <script>
+// ===== FIREBASE INIT =====
+const firebaseConfig = {
+  apiKey: "AIzaSyDVhslbGUy7ERPALbV5fa3GXNZwaXH2uYc",
+  authDomain: "hobby-tracker-81525.firebaseapp.com",
+  projectId: "hobby-tracker-81525",
+  storageBucket: "hobby-tracker-81525.firebasestorage.app",
+  messagingSenderId: "953925678309",
+  appId: "1:953925678309:web:08bea79827025c52c5d00c"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const docRef = db.collection('tracker').doc('main');
+
 // ===== DATA =====
 const QUOTES = [
   "Small daily improvements lead to staggering long-term results.",
@@ -261,15 +277,51 @@ let data = {
   fitness: { entries: [], weeklyGoal: 5 }
 };
 
-// Try loading from browser storage as convenience cache
+// ===== FIREBASE SYNC =====
+let _saving = false;
+
+function saveLocal() {
+  // Save to sessionStorage as local cache
+  try { window.sessionStorage?.setItem?.('hobbyData', JSON.stringify(data)); } catch(e) {}
+  // Save to Firebase
+  if (_saving) return;
+  _saving = true;
+  docRef.set({
+    books: JSON.stringify(data.books),
+    ai: JSON.stringify(data.ai),
+    fitness: JSON.stringify(data.fitness),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(err => console.warn('Firebase save error:', err))
+    .finally(() => { _saving = false; });
+}
+
+// Real-time listener: sync data from Firebase when changed on another device
+docRef.onSnapshot(snapshot => {
+  if (!snapshot.exists) return;
+  const d = snapshot.data();
+  try {
+    const newBooks = JSON.parse(d.books || '{}');
+    const newAi = JSON.parse(d.ai || '{}');
+    const newFitness = JSON.parse(d.fitness || '{}');
+    // Only update if data actually changed (avoid re-render loops)
+    const incoming = JSON.stringify({ books: newBooks, ai: newAi, fitness: newFitness });
+    const current = JSON.stringify({ books: data.books, ai: data.ai, fitness: data.fitness });
+    if (incoming !== current) {
+      data.books = newBooks.entries ? newBooks : data.books;
+      data.ai = newAi.entries ? newAi : data.ai;
+      data.fitness = newFitness.entries ? newFitness : data.fitness;
+      try { window.sessionStorage?.setItem?.('hobbyData', JSON.stringify(data)); } catch(e) {}
+      render();
+      toast('Synced from cloud!');
+    }
+  } catch(e) { console.warn('Firebase parse error:', e); }
+}, err => console.warn('Firebase listen error:', err));
+
+// Load local cache first for instant render
 try {
   const saved = window.sessionStorage?.getItem?.('hobbyData');
   if (saved) data = JSON.parse(saved);
 } catch(e) {}
-
-function saveLocal() {
-  try { window.sessionStorage?.setItem?.('hobbyData', JSON.stringify(data)); } catch(e) {}
-}
 
 // ===== TOAST =====
 function toast(msg) {
