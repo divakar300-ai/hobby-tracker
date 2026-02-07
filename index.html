@@ -167,7 +167,7 @@
   <!-- ===== OVERVIEW ===== -->
   <div class="section active" id="sec-overview">
     <div style="text-align:center; margin: 16px 0 20px;">
-      <svg id="overallRing" width="130" height="130"></svg>
+      <div id="overallRingWrap"><svg id="overallRing" width="130" height="130"></svg></div>
       <div style="font-size:12px; color:var(--muted);">overall progress</div>
     </div>
     <div id="overviewCards"></div>
@@ -255,9 +255,22 @@ const firebaseConfig = {
   messagingSenderId: "953925678309",
   appId: "1:953925678309:web:08bea79827025c52c5d00c"
 };
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-const docRef = db.collection('tracker').doc('main');
+let db = null;
+let docRef = null;
+let firebaseReady = false;
+
+try {
+  if (window.firebase?.apps?.length) {
+    window.firebase.app();
+  } else if (window.firebase?.initializeApp) {
+    window.firebase.initializeApp(firebaseConfig);
+  }
+  db = window.firebase?.firestore?.() || null;
+  docRef = db ? db.collection('tracker').doc('main') : null;
+  firebaseReady = !!docRef;
+} catch (e) {
+  console.warn('Firebase init failed. Running local-only mode.', e);
+}
 
 // ===== DATA =====
 const QUOTES = [
@@ -284,38 +297,40 @@ function saveLocal() {
   // Save to sessionStorage as local cache
   try { window.sessionStorage?.setItem?.('hobbyData', JSON.stringify(data)); } catch(e) {}
   // Save to Firebase
-  if (_saving) return;
+  if (!firebaseReady || !docRef || _saving) return;
   _saving = true;
   docRef.set({
     books: JSON.stringify(data.books),
     ai: JSON.stringify(data.ai),
     fitness: JSON.stringify(data.fitness),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
   }).catch(err => console.warn('Firebase save error:', err))
     .finally(() => { _saving = false; });
 }
 
 // Real-time listener: sync data from Firebase when changed on another device
-docRef.onSnapshot(snapshot => {
-  if (!snapshot.exists) return;
-  const d = snapshot.data();
-  try {
-    const newBooks = JSON.parse(d.books || '{}');
-    const newAi = JSON.parse(d.ai || '{}');
-    const newFitness = JSON.parse(d.fitness || '{}');
-    // Only update if data actually changed (avoid re-render loops)
-    const incoming = JSON.stringify({ books: newBooks, ai: newAi, fitness: newFitness });
-    const current = JSON.stringify({ books: data.books, ai: data.ai, fitness: data.fitness });
-    if (incoming !== current) {
-      data.books = newBooks.entries ? newBooks : data.books;
-      data.ai = newAi.entries ? newAi : data.ai;
-      data.fitness = newFitness.entries ? newFitness : data.fitness;
-      try { window.sessionStorage?.setItem?.('hobbyData', JSON.stringify(data)); } catch(e) {}
-      render();
-      toast('Synced from cloud!');
-    }
-  } catch(e) { console.warn('Firebase parse error:', e); }
-}, err => console.warn('Firebase listen error:', err));
+if (firebaseReady && docRef) {
+  docRef.onSnapshot(snapshot => {
+    if (!snapshot.exists) return;
+    const d = snapshot.data();
+    try {
+      const newBooks = JSON.parse(d.books || '{}');
+      const newAi = JSON.parse(d.ai || '{}');
+      const newFitness = JSON.parse(d.fitness || '{}');
+      // Only update if data actually changed (avoid re-render loops)
+      const incoming = JSON.stringify({ books: newBooks, ai: newAi, fitness: newFitness });
+      const current = JSON.stringify({ books: data.books, ai: data.ai, fitness: data.fitness });
+      if (incoming !== current) {
+        data.books = newBooks.entries ? newBooks : data.books;
+        data.ai = newAi.entries ? newAi : data.ai;
+        data.fitness = newFitness.entries ? newFitness : data.fitness;
+        try { window.sessionStorage?.setItem?.('hobbyData', JSON.stringify(data)); } catch(e) {}
+        render();
+        toast('Synced from cloud!');
+      }
+    } catch(e) { console.warn('Firebase parse error:', e); }
+  }, err => console.warn('Firebase listen error:', err));
+}
 
 // Load local cache first for instant render
 try {
@@ -332,21 +347,61 @@ function toast(msg) {
 }
 
 // ===== TABS =====
+const VALID_TABS = new Set(['overview', 'books', 'ai', 'fitness']);
+const DEBUG_NAV = new URLSearchParams(window.location.search).has('debugNav');
+
+function getTabFromHash() {
+  const tab = window.location.hash.replace('#', '').trim();
+  return VALID_TABS.has(tab) ? tab : null;
+}
+
+function enableNavDebug() {
+  if (!DEBUG_NAV) return;
+  console.info('[nav] debug mode enabled');
+  document.addEventListener('click', (event) => {
+    const el = event.target.closest('button,.tab,.overview-card,.list-item,.fab,[onclick]');
+    if (!el) return;
+    console.debug('[nav] click', {
+      tag: el.tagName.toLowerCase(),
+      id: el.id || null,
+      tab: el.dataset?.tab || null,
+      onclick: el.getAttribute('onclick') || null,
+      text: (el.textContent || '').trim().slice(0, 60)
+    });
+  }, true);
+  window.addEventListener('error', (event) => {
+    console.error('[nav] runtime error', {
+      message: event.message,
+      file: event.filename,
+      line: event.lineno,
+      col: event.colno
+    });
+  });
+}
+
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('sec-' + tab.dataset.tab).classList.add('active');
-    updateFabColor(tab.dataset.tab);
+    switchTab(tab.dataset.tab, { updateHash: true });
   });
 });
 
-function switchTab(name) {
+window.addEventListener('hashchange', () => {
+  const hashTab = getTabFromHash();
+  if (hashTab) switchTab(hashTab, { updateHash: false });
+});
+
+function switchTab(name, opts = {}) {
+  if (!VALID_TABS.has(name)) return;
+  const section = document.getElementById('sec-' + name);
+  if (!section) return;
+
   document.querySelectorAll('.tab').forEach(t => { t.classList.toggle('active', t.dataset.tab === name); });
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.getElementById('sec-' + name).classList.add('active');
+  section.classList.add('active');
   updateFabColor(name);
+  if (opts.updateHash && window.location.hash !== '#' + name) {
+    window.location.hash = name;
+  }
 }
 
 function updateFabColor(tab) {
@@ -374,7 +429,7 @@ function ringHTML(id, pctVal, color, size, label) {
   const r = (size - 10) / 2;
   const c = 2 * Math.PI * r;
   const offset = c - (pctVal / 100) * c;
-  return `<svg width="${size}" height="${size}">
+  return `<svg id="${id}" width="${size}" height="${size}">
     <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#E5E7EB" stroke-width="10"/>
     <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="10"
       stroke-dasharray="${c}" stroke-dashoffset="${offset}" stroke-linecap="round"
@@ -712,7 +767,8 @@ function renderOverview() {
     (pct(bc, data.books.goal) * 0.333) + (pct(Math.min(ah, 100), 100) * 0.333) + (pct(fw, data.fitness.weeklyGoal) * 0.334)
   );
 
-  document.getElementById('overallRing').outerHTML = ringHTML('overallRing', overall, '#3B82F6', 130, 'overall');
+  const ringWrap = document.getElementById('overallRingWrap');
+  if (ringWrap) ringWrap.innerHTML = ringHTML('overallRing', overall, '#3B82F6', 130, 'overall');
 
   const reading = data.books.entries.filter(b => b.status === 'reading').length;
   const aiActive = data.ai.entries.filter(e => e.status === 'in-progress').length;
@@ -860,6 +916,10 @@ function renderFitness() {
 
 // ===== INIT =====
 render();
+enableNavDebug();
+const initialTab = getTabFromHash();
+if (initialTab) switchTab(initialTab, { updateHash: false });
+else updateFabColor(document.querySelector('.tab.active')?.dataset.tab || 'overview');
 </script>
 </body>
 </html>
